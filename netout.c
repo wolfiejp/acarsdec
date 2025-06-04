@@ -17,46 +17,63 @@ static char *netOutputRawaddr = NULL;
 
 int Netoutinit(char *Rawaddr)
 {
-	char *addr;
-	char *port;
-	struct addrinfo hints, *servinfo, *p;
-	int rv;
+        char *addr;
+        char *port;
+        struct addrinfo hints, *servinfo, *p;
+        int rv;
+        char *rawcopy;
 
-	netOutputRawaddr = Rawaddr;
+        /* keep a private copy for reconnect attempts */
+        if(netOutputRawaddr == NULL || strcmp(netOutputRawaddr, Rawaddr) != 0) {
+                free(netOutputRawaddr);
+                netOutputRawaddr = strdup(Rawaddr);
+                if(netOutputRawaddr == NULL) {
+                        perror("strdup");
+                        return -1;
+                }
+        }
 
-	memset(&hints, 0, sizeof hints);
-	if (Rawaddr[0] == '[') {
-		hints.ai_family = AF_INET6;
-		addr = Rawaddr + 1;
-		port = strstr(addr, "]");
-		if (port == NULL) {
-			fprintf(stderr, "Invalid IPV6 address\n");
-			return -1;
-		}
-		*port = 0;
-		port++;
-		if (*port != ':')
-			port = "5555";
-		else
-			port++;
-	} else {
-		hints.ai_family = AF_UNSPEC;
-		addr = Rawaddr;
-		port = strstr(addr, ":");
-		if (port == NULL)
-			port = "5555";
-		else {
-			*port = 0;
-			port++;
-		}
-	}
+        rawcopy = strdup(Rawaddr);
+        if(rawcopy == NULL) {
+                perror("strdup");
+                return -1;
+        }
+
+        memset(&hints, 0, sizeof hints);
+        if (rawcopy[0] == '[') {
+                hints.ai_family = AF_INET6;
+                addr = rawcopy + 1;
+                port = strstr(addr, "]");
+                if (port == NULL) {
+                        fprintf(stderr, "Invalid IPV6 address\n");
+                        free(rawcopy);
+                        return -1;
+                }
+                *port = 0;
+                port++;
+                if (*port != ':')
+                        port = "5555";
+                else
+                        port++;
+        } else {
+                hints.ai_family = AF_UNSPEC;
+                addr = rawcopy;
+                port = strstr(addr, ":");
+                if (port == NULL)
+                        port = "5555";
+                else {
+                        *port = 0;
+                        port++;
+                }
+        }
 
 	hints.ai_socktype = SOCK_DGRAM;
 
-	if ((rv = getaddrinfo(addr, port, &hints, &servinfo)) != 0) {
-		fprintf(stderr, "Invalid/unknown address %s\n", addr);
-		return -1;
-	}
+        if ((rv = getaddrinfo(addr, port, &hints, &servinfo)) != 0) {
+                fprintf(stderr, "Invalid/unknown address %s\n", addr);
+                free(rawcopy);
+                return -1;
+        }
 
 	for (p = servinfo; p != NULL; p = p->ai_next) {
 		if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
@@ -70,13 +87,15 @@ int Netoutinit(char *Rawaddr)
 		break;
 	}
 	if (p == NULL) {
-		fprintf(stderr, "failed to connect\n");
-		return -1;
-	}
+                fprintf(stderr, "failed to connect\n");
+                free(rawcopy);
+                return -1;
+        }
 
-	freeaddrinfo(servinfo);
+        freeaddrinfo(servinfo);
+        free(rawcopy);
 
-	return 0;
+        return 0;
 }
 
 static int Netwrite(const void *buf, size_t count) {
